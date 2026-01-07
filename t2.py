@@ -23,6 +23,7 @@ class GPTDatasetV1(Dataset):
         self.target_ids = []
 
         token_ids = tokenizer.encode(txt)                                #A
+        print(f'共有 {len(token_ids)} 个词汇')
 
         for i in range(0, len(token_ids) - max_length, stride):          #B
             input_chunk = token_ids[i:i + max_length]
@@ -36,11 +37,6 @@ class GPTDatasetV1(Dataset):
     def __getitem__(self, idx):                                            #D
         return self.input_ids[idx], self.target_ids[idx]
 
-
-#A 将整个文本进行分词
-#B 使用滑动窗口将书籍分块为最大长度的重叠序列。
-#C 返回数据集的总行数
-#D 从数据集中返回指定行
 
 def create_dataloader_v1(txt, batch_size=4, max_length=256,
                          stride=128, shuffle=True, drop_last=True, num_workers=0):
@@ -56,30 +52,55 @@ def create_dataloader_v1(txt, batch_size=4, max_length=256,
 
     return dataloader
 
-#A 初始化分词器
-#B 创建GPTDatasetV1类
-#C drop_last=True会在最后一批次小于指定的batch_size时丢弃该批次，以防止训练期间的损失峰值
-#D 用于预处理的CPU进程数量
 
 RAW_TEXT_PATH = 'ddia_c0.txt'
 
-spm.SentencePieceTrainer.Train(
-    input=RAW_TEXT_PATH,
-    model_prefix="sp",
-    vocab_size=2914,
-    model_type="unigram",
-    character_coverage=0.9995,
-    byte_fallback=True
-)
+# spm.SentencePieceTrainer.Train(
+#     input=RAW_TEXT_PATH,
+#     model_prefix="sp",
+#     vocab_size=2914,
+#     model_type="unigram",
+#     character_coverage=0.9995,
+#     byte_fallback=True
+# )
 
 
 with open(RAW_TEXT_PATH, 'r') as f:
     raw_text = f.read()
 
+# dataloader = create_dataloader_v1(
+#       raw_text, batch_size=1, max_length=4, stride=1, shuffle=False)
+# data_iter = iter(dataloader)              
+# first_batch = next(data_iter)
+# print(first_batch)
+# second_batch = next(data_iter)
+# print(second_batch)
+
+max_length = 4
 dataloader = create_dataloader_v1(
-      raw_text, batch_size=1, max_length=4, stride=1, shuffle=False)
-data_iter = iter(dataloader)              #A
-first_batch = next(data_iter)
-print(first_batch)
-second_batch = next(data_iter)
-print(second_batch)
+      raw_text, batch_size=8, max_length=max_length, stride=max_length, shuffle=False)
+data_iter = iter(dataloader)
+inputs, targets = next(data_iter)
+
+print("Token IDs:\n", inputs)
+print("\nInputs shape:\n", inputs.shape)
+
+vocab_size = 10042
+output_dim = 256
+token_embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
+
+token_embeddings = token_embedding_layer(inputs)
+print(token_embeddings.shape)
+
+context_length = max_length
+pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
+pos_embeddings = pos_embedding_layer(torch.arange(context_length))
+print(pos_embeddings.shape)
+
+attn_scores = torch.empty(8, 8)
+for i, x_i in enumerate(inputs):
+    for j, x_j in enumerate(inputs):
+        attn_scores[i, j] = torch.dot(x_i, x_j)
+print(attn_scores)
+attn_weights = torch.softmax(attn_scores, dim=-1)
+print(attn_weights)
